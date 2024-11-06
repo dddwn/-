@@ -36,10 +36,10 @@ while current_page <= max_page:
         phone_element = row.find_element(By.XPATH, ".//td[4]/p/strong").text
         row_data.append(phone_element)
         
-        # 초기값 설정 (추가 정보가 없는 경우 None으로 대체)
+        # 초기값 설정
         additional_info = [None, None, None, None, None, None]
 
-        # 추가 정보 버튼 클릭하여 팝업 창 열기 (JavaScript 사용)
+        # 추가 정보 버튼 클릭하여 팝업 창 열기
         info_link = row.find_element(By.XPATH, ".//a[contains(@title, '새 창으로 이동합니다.')]")
         driver.execute_script("arguments[0].click();", info_link)
         
@@ -92,7 +92,7 @@ while current_page <= max_page:
         # 추가 정보 항목을 row_data에 추가
         row_data.extend(additional_info)
 
-        # 상세보기 버튼 클릭하여 제외 정보 수집 (JavaScript 사용)
+        # 상세보기 버튼 클릭하여 제외 정보 수집
         try:
             details_link = row.find_element(By.XPATH, ".//a[contains(@title, '새 창으로 이동합니다.') and contains(@href, 'goAsnHmpgPopChkYn2')]")
             driver.execute_script("arguments[0].click();", details_link)
@@ -200,16 +200,14 @@ df['시도+시군구'] = df['시도'] + df['시군구']
 
 import re
 
+# 서비스 전처리
 df3 = df
 
-# 서비스항목 열의 공백 제거 및 NaN 값을 빈 문자열로 변환
 df3['서비스항목'] = df3['서비스항목'].fillna('').str.replace(" ", "")
 
-# 고유 서비스 항목 추출
 unique_services = set()
 df3['서비스항목'].str.split(',').apply(lambda x: unique_services.update(x))
 
-# 고유 서비스 항목을 열로 추가하여 'O' 또는 None으로 표시
 for service in unique_services:
     df3[service] = df3['서비스항목'].apply(lambda x: 'O' if service in x.split(',') else None)
 
@@ -218,4 +216,5 @@ df = df3
 if '' in df.columns:
     df = df.drop(columns=[''])
 
+# 엑셀로 저장
 df.to_excel('기아오토큐_최종.xlsx')
