@@ -1,0 +1,221 @@
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import pandas as pd
+import time
+
+# WebDriver 설정 (예: Chrome)
+driver = webdriver.Chrome()
+
+# URL로 이동
+url = "https://members.kia.com/kr/view/qnet/asn_prct/qnet_asn_prct_index.do"
+driver.get(url)
+
+# 총 페이지 설정
+max_page = 77
+current_page = 1
+data = []
+
+while current_page <= max_page:
+    # 현재 페이지에서 모든 행 데이터 저장
+    rows = driver.find_elements(By.CSS_SELECTOR, "tbody.text_c tr")
+
+    for row in rows:
+        row_data = []
+        
+        # 업체명과 종류
+        name_type = row.find_elements(By.TAG_NAME, "p")[0:2]
+        row_data.extend([elem.text for elem in name_type])
+        
+        # 주소
+        address = row.find_elements(By.TAG_NAME, "p")[2].text
+        row_data.append(address)
+        
+        # 전화번호
+        phone_element = row.find_element(By.XPATH, ".//td[4]/p/strong").text
+        row_data.append(phone_element)
+        
+        # 초기값 설정 (추가 정보가 없는 경우 None으로 대체)
+        additional_info = [None, None, None, None, None, None]
+
+        # 추가 정보 버튼 클릭하여 팝업 창 열기 (JavaScript 사용)
+        info_link = row.find_element(By.XPATH, ".//a[contains(@title, '새 창으로 이동합니다.')]")
+        driver.execute_script("arguments[0].click();", info_link)
+        
+        # 팝업 창이 열릴 때까지 대기하고 팝업 창으로 전환
+        WebDriverWait(driver, 3).until(lambda d: len(d.window_handles) > 1)
+        driver.switch_to.window(driver.window_handles[1])
+        
+        # 각 정보 수집을 위한 대기
+        try:
+            phone = WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.ID, "P_repnTn"))).text
+        except:
+            phone = None
+        
+        try:
+            fax = WebDriverWait(driver, 1).until(EC.presence_of_element_located((By.ID, "P_faxTn"))).text
+        except:
+            fax = None
+        
+        try:
+            address_detail = WebDriverWait(driver, 1).until(EC.presence_of_element_located((By.ID, "P_pbzAdr"))).text
+        except:
+            address_detail = None
+        
+        try:
+            service_item = WebDriverWait(driver, 1).until(EC.presence_of_element_located((By.ID, "serviceItem"))).text
+        except:
+            service_item = None
+        
+        try:
+            # 운영시간 수집
+            operating_hours_element = WebDriverWait(driver, 3).until(
+                EC.presence_of_element_located((By.XPATH, "//th[.='운영시간']/following-sibling::td/p"))
+            )
+            operating_hours = operating_hours_element.get_attribute("innerText").replace("\n", " ")
+        except:
+            operating_hours = None
+
+        try:
+            intro_text = WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.CLASS_NAME, "prText"))).text
+        except:
+            intro_text = None
+
+        # 추가 정보를 배열에 저장
+        additional_info = [phone, fax, address_detail, service_item, operating_hours, intro_text]
+        
+        # 팝업 창 닫기 및 원래 창으로 전환
+        driver.close()
+        driver.switch_to.window(driver.window_handles[0])
+        
+        # 추가 정보 항목을 row_data에 추가
+        row_data.extend(additional_info)
+
+        # 상세보기 버튼 클릭하여 제외 정보 수집 (JavaScript 사용)
+        try:
+            details_link = row.find_element(By.XPATH, ".//a[contains(@title, '새 창으로 이동합니다.') and contains(@href, 'goAsnHmpgPopChkYn2')]")
+            driver.execute_script("arguments[0].click();", details_link)
+            
+            # 팝업 창이 열릴 때까지 대기하고 팝업 창으로 전환
+            WebDriverWait(driver, 3).until(lambda d: len(d.window_handles) > 1)
+            driver.switch_to.window(driver.window_handles[1])
+            
+            # 제외 정보 대기 후 수집
+            try:
+                exclude_types = [elem.text for elem in WebDriverWait(driver, 1).until(
+                    EC.presence_of_all_elements_located((By.XPATH, "//div[@class='list']//dl[1]//ul/li")))]
+                exclude_types_text = ', '.join(exclude_types)
+            except:
+                exclude_types_text = None
+
+            try:
+                exclude_jobs = [elem.text for elem in WebDriverWait(driver, 1).until(
+                    EC.presence_of_all_elements_located((By.XPATH, "//div[@class='list']//dl[2]//ul/li")))]
+                exclude_jobs_text = ', '.join(exclude_jobs)
+            except:
+                exclude_jobs_text = None
+
+            try:
+                exclude_others = [elem.text for elem in WebDriverWait(driver, 1).until(
+                    EC.presence_of_all_elements_located((By.XPATH, "//div[@class='list']//dl[3]//ul/li")))]
+                exclude_others_text = ', '.join(exclude_others)
+            except:
+                exclude_others_text = None
+
+            # 추가 정보 수집 (서비스 제외 항목, 불가 차종, 혼잡시간대)
+            try:
+                exclusion_list = WebDriverWait(driver, 3).until(
+                    EC.presence_of_element_located((By.ID, "ceqSbc"))
+                ).text
+                other_customer_notice = exclusion_list  # 전체 텍스트를 "기타 고객 안내" 열로 통합
+            except:
+                other_customer_notice = None
+            
+            # 팝업 창 닫기 및 원래 창으로 전환
+            driver.close()
+            driver.switch_to.window(driver.window_handles[0])
+
+        except Exception as e:
+            print(f"상세보기 버튼을 찾지 못했습니다: {e}")
+            exclude_types_text, exclude_jobs_text, exclude_others_text = None, None, None
+            other_customer_notice = None
+        
+        # 기타 고객 안내 항목을 row_data에 추가
+        row_data.extend([exclude_types_text, exclude_jobs_text, exclude_others_text, other_customer_notice])
+        
+        data.append(row_data)
+
+    # 다음 페이지로 이동
+    if current_page % 10 == 0 and current_page < max_page:
+        try:
+            # "다음" 버튼을 클릭하여 다음 10개 탭으로 이동
+            next_button = driver.find_element(By.XPATH, "//a[contains(@href, 'goPage_comm({})')]".format(current_page + 1))
+            driver.execute_script("arguments[0].click();", next_button)
+            time.sleep(3)  # 페이지 로딩 대기
+        except Exception as e:
+            print(f"다음 버튼을 클릭하는 중 오류 발생: {e}")
+            break
+
+    # 다음 페이지로 계속 진행
+    elif current_page < max_page:
+        next_page = driver.find_element(By.XPATH, f"//a[contains(@href, 'goPage_comm({current_page + 1})')]")
+        driver.execute_script("arguments[0].click();", next_page)
+        time.sleep(3)  # 페이지 로딩 대기
+
+    current_page += 1
+
+# DataFrame으로 변환
+columns = ['업체명', '종류', '주소', '전화번호', '추가전화', '팩스', '상세주소', '서비스항목', '운영시간', '소개문구', 
+           '제외차종', '제외작업', '제외기타', '기타 고객 안내']
+df = pd.DataFrame(data, columns=columns)
+
+# 결과 출력
+print(df)
+
+# 드라이버 종료
+driver.quit()
+
+
+df['주소'] = df['주소'].str.replace('특별시|광역시|특별자치도', '', regex=True)
+df['주소'] = df['주소'].str.replace('서울시', '서울', regex=False)
+df['주소'] = df['주소'].str.replace('경기도', '경기', regex=False)
+df['주소'] = df['주소'].str.replace('인천시', '인천', regex=False)
+df['주소'] = df['주소'].str.replace('강원도', '강원', regex=False)
+df['주소'] = df['주소'].str.replace('충청북도', '충북', regex=False)
+df['주소'] = df['주소'].str.replace('충청남도', '충남', regex=False)
+df['주소'] = df['주소'].str.replace('전라북도', '전북', regex=False)
+df['주소'] = df['주소'].str.replace('전라남도', '전남', regex=False)
+df['주소'] = df['주소'].str.replace('경상북도', '경북', regex=False)
+df['주소'] = df['주소'].str.replace('경상남도', '경남', regex=False)
+
+# '시도' 열에 주소 첫 두 글자 추가
+df['시도'] = df['주소'].str[:2]
+
+# '시군구' 열에 첫 번째와 두 번째 띄어쓰기 사이의 텍스트 추출
+df['시군구'] = df['주소'].str.extract(r'^\S+\s(\S+)')[0]
+
+df['시도+시군구'] = df['시도'] + df['시군구']
+
+
+import re
+
+df3 = df
+
+# 서비스항목 열의 공백 제거 및 NaN 값을 빈 문자열로 변환
+df3['서비스항목'] = df3['서비스항목'].fillna('').str.replace(" ", "")
+
+# 고유 서비스 항목 추출
+unique_services = set()
+df3['서비스항목'].str.split(',').apply(lambda x: unique_services.update(x))
+
+# 고유 서비스 항목을 열로 추가하여 'O' 또는 None으로 표시
+for service in unique_services:
+    df3[service] = df3['서비스항목'].apply(lambda x: 'O' if service in x.split(',') else None)
+
+df = df3
+
+if '' in df.columns:
+    df = df.drop(columns=[''])
+
+df.to_excel('기아오토큐_최종.xlsx')
